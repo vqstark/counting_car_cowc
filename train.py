@@ -109,7 +109,7 @@ def train(args, hyps):
         # Train process
         print(('\n' + '%10s' * 6) % ('Epoch', 'loss', 'accuracy', 'precision', 'recall', 'f1'))
         pbar = tqdm(enumerate(train_loader), total=len(train_loader))  # progress bar
-        mloss = 0
+        mloss = torch.zeros(1).cuda()
         mmetrics = torch.zeros(4).cuda()
         for i, (ni, batch) in enumerate(pbar):
             
@@ -137,16 +137,16 @@ def train(args, hyps):
             nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
 
-            mloss = (mloss * i + loss) / (i+1)
-            mmetrics = (mmetrics * i + torch.tensor(metrics)) / (i+1)
+            mloss = (mloss * i + loss.detach().cuda()) / (i + 1)
+            mmetrics = (mmetrics * i + torch.tensor(metrics).cuda()) / (i+1)
             s = ('%10s' + '%10.3g'*5) % (
-                  '%g/%g' % (epoch, epochs + 1), mloss, *mmetrics)
+                  '%g/%g' % (epoch, epochs), mloss, *mmetrics)
             pbar.set_description(s)
         
         # Val process
         print(('\n' + '%10s'*5) % ('val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1'))
         pbar = tqdm(enumerate(val_loader), total=len(val_loader))  # progress bar
-        val_mloss = 0
+        val_mloss = torch.zeros(1).cuda()
         val_mmetrics = torch.zeros(4).cuda()
         model.eval()
         with torch.no_grad():
@@ -161,10 +161,10 @@ def train(args, hyps):
 
                 val_loss, *val_metrics = model(img.float(), one_hot.float())
 
-                val_mloss = (val_mloss * i + val_loss) / (i+1)
-                val_mmetrics = (val_mmetrics * i + val_metrics) / (i+1)
+                val_mloss = (val_mloss * i + val_loss.detach().cuda()) / (i+1)
+                val_mmetrics = (val_mmetrics * i + torch.tensor(val_metrics).cuda()) / (i+1)
                 val_s = ('%10.3g'*5) % (val_mloss, *val_mmetrics)
-                pbar.set_description(s)
+                pbar.set_description(val_s)
 
         # Update scheduler
         scheduler.step()
