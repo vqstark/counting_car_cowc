@@ -1,6 +1,7 @@
 import torch
 import argparse
 import os
+import glob
 from tqdm import tqdm
 import numpy as np
 import torch.nn.functional as F
@@ -25,6 +26,8 @@ def train(args, hyps):
     # creat folder
     if not os.path.exists('./weights'):
         os.mkdir('./weights')
+    for f in glob.glob(results_file):
+        os.remove(f)
 
     train_ds = COWC(paths = args.annotation_train_path, 
                     root = args.imgs_train_path, 
@@ -68,6 +71,11 @@ def train(args, hyps):
 
     model = ResCeptionNet(num_classes = max_car).float()
 
+    # Optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
+    scheduler.last_epoch = start_epoch - 1
+
     if torch.cuda.is_available():
         model.cuda()
     if torch.cuda.device_count() > 1:
@@ -96,11 +104,6 @@ def train(args, hyps):
             start_epoch = chkpt['epoch'] + 1   
 
         del chkpt
-
-    # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
-    scheduler.last_epoch = start_epoch - 1
 
     # Model infor
     model_info(model)
