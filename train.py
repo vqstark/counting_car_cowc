@@ -76,7 +76,8 @@ def train(args, hyps):
 
     # Compute class weights
     class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-    class_weights = torch.tensor(class_weights*batch_size, dtype=torch.float32)
+    batch_class_weights = [list(class_weights) for _ in range(batch_size)]
+    class_weights = torch.tensor(batch_class_weights, dtype=torch.float32)
 
     val_ds = COWC(paths = args.annotation_val_path, 
                     root = args.imgs_val_path, 
