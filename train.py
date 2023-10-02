@@ -11,6 +11,31 @@ from models.model import ResCeptionNet
 from utils.utils import hyp_parse, model_info
 from dataset import *
 
+def compute_histogram(dataset):
+    print('Computing histogram')
+    hist = np.zeros(shape=[10**3, ], dtype=int)
+    
+    for idx in tqdm(range(dataset.__len__())):
+        label = dataset[idx]['label']
+        hist[label] += 1
+    
+    car_count_max = np.where(hist > 0)[0][-1]
+    
+    return hist[:car_count_max + 1]
+
+def compute_class_weight(histogram, car_max):
+
+	histogram_new = np.empty(shape=[(car_max + 1),])
+
+	histogram_new[:car_max] = histogram[:car_max]
+	histogram_new[car_max] = histogram[car_max:].sum()
+
+	class_weight = 1.0 / histogram_new
+
+	class_weight /= class_weight.sum()
+
+	return class_weight
+
 def train(args, hyps):
     epochs = int(hyps['epochs'])
     batch_size = int(hyps['batch_size'])
@@ -49,6 +74,10 @@ def train(args, hyps):
         drop_last=True
     )
 
+    # Compute class weights
+    class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
+    class_weights = torch.tensor(class_weights*batch_size, dtype=torch.float32)
+
     val_ds = COWC(paths = args.annotation_val_path, 
                     root = args.imgs_val_path, 
                     crop_size=int(hyps['CROP_SIZE']), 
@@ -72,7 +101,8 @@ def train(args, hyps):
     model = ResCeptionNet(num_classes = max_car).float()
 
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
+    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
+    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
@@ -125,7 +155,7 @@ def train(args, hyps):
 
             one_hot = F.one_hot(label, num_classes=max_car+1)
 
-            loss, *metrics = model(img.float(), one_hot.float())
+            loss, *metrics = model(img.float(), one_hot.float(), class_weights)
 
             if not torch.isfinite(loss):
                 # import ipdb; ipdb.set_trace()

@@ -55,12 +55,19 @@ class ResCeptionNet(nn.Module):
         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
         m.weight.data.normal_(0, math.sqrt(2. / n))
 
-  def forward(self, x, y=None):
+  def forward(self, x, y=None, class_weights=None, training=True):
     for m in self.ff:
       x = m(x)
     x = x.view(x.size(0), -1)
     x = self.fc(x)
     x = self.softmax(x)
+
+    if not training:
+      return self.predict(x)
+    
+    if torch.is_tensor(class_weights):
+      x = x.clone()
+      x *= class_weights.cuda()
 
     loss = self.loss(x, y)
 
@@ -80,3 +87,7 @@ class ResCeptionNet(nn.Module):
             recall = true_positives / (true_positives + false_negatives + 1e-15)
             f1 = 2 * (precision * recall) / (precision + recall + 1e-15)
     return loss, accuracy, precision, recall, f1
+
+  def predict(self, x):
+    _, argmax = torch.max(x, 1)
+    return argmax
