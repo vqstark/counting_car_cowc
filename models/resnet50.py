@@ -9,22 +9,21 @@ class ResNet(nn.Module):
         self.num_classes = num_classes + 1
         self.class_weights = class_weights
 
-        self.resnet = resnet50(pretrained=False)
+        self.resnet50 = resnet50(pretrained=False)
 
         num_features = self.resnet50.fc.in_features
         self.resnet50.fc = nn.Sequential(
             nn.Linear(num_features, 512),  # Custom fully connected layer
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(512, num_classes)  # Output layer with num_classes units
+            nn.Linear(512, self.num_classes)  # Output layer with num_classes units
         )
 
         self.softmax = nn.LogSoftmax(dim=1)
         self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
     
     def forward(self, x, y=None, training=True):
-        x = self.resnet(x) # Features map
-        x = self.resnet50.fc(x) # Fully connected features
+        x = self.resnet50(x) # Features map
         x = self.softmax(x)
 
         if not training:
