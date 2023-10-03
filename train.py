@@ -97,16 +97,17 @@ def train(args, hyps):
 
     if args.mode == 'resnet50':
         # Compute class weights
-        class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-        class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
+        # class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
+        # class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
-        model = ResNet(num_classes = max_car, class_weights=class_weights).float()
+        # model = ResNet(num_classes = max_car, class_weights=class_weights).float()
+        model = ResNet(num_classes = max_car).float()
     else:
         model = ResCeptionNet(num_classes = max_car).float()
 
     # Optimizer
-    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
-    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
+    # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
@@ -251,8 +252,8 @@ if __name__ == '__main__':
 
     if args.mode == 'resnet50':
         hyps['CROP_SIZE'] = 96
-        hyps['MAX_CAR'] = 10
-        hyps['batch_size'] = 16
+        hyps['MAX_CAR'] = 9
+        hyps['batch_size'] = 32
         
     print(args)
     print(hyps)

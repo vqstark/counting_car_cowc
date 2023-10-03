@@ -3,7 +3,7 @@ import torch.nn as nn
 from torchvision.models import resnet50
 
 class ResNet(nn.Module):
-    def __init__(self, num_classes, class_weights):
+    def __init__(self, num_classes, class_weights=None):
         super(ResNet, self).__init__()
 
         self.num_classes = num_classes + 1
@@ -20,8 +20,12 @@ class ResNet(nn.Module):
         )
 
         self.softmax = nn.LogSoftmax(dim=1)
-        self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
-    
+
+        if torch.is_tensor(self.class_weights):
+            self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
+        else:
+            self.loss = nn.CrossEntropyLoss()
+
     def forward(self, x, y=None, training=True):
         x = self.resnet50(x) # Features map
         x = self.softmax(x)
