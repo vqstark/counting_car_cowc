@@ -5,11 +5,12 @@ from models.layers import ResCeption
 
 from torch.nn.modules import activation
 class ResCeptionNet(nn.Module):
-  def __init__(self, num_classes, input_shape = (3, None, None)):
+  def __init__(self, num_classes, class_weights, input_shape = (3, None, None)):
     super(ResCeptionNet, self).__init__()
 
     input_channels = 3
     self.num_classes = num_classes + 1
+    self.class_weights = class_weights
 
     self.ff = nn.ModuleList()
     # Block 1
@@ -46,7 +47,7 @@ class ResCeptionNet(nn.Module):
     self.fc = nn.Linear(640, self.num_classes)
     self.softmax = nn.LogSoftmax(dim=1)
     
-    self.loss = nn.CrossEntropyLoss()
+    self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
     self.init_weights()
 
   def init_weights(self):
@@ -55,7 +56,7 @@ class ResCeptionNet(nn.Module):
         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
         m.weight.data.normal_(0, math.sqrt(2. / n))
 
-  def forward(self, x, y=None, class_weights=None, training=True):
+  def forward(self, x, y=None, training=True):
     for m in self.ff:
       x = m(x)
     x = x.view(x.size(0), -1)
@@ -65,10 +66,6 @@ class ResCeptionNet(nn.Module):
     if not training:
       return self.predict(x)
     
-    if torch.is_tensor(class_weights):
-      x = x.clone()
-      x *= class_weights.cuda()
-
     loss = self.loss(x, y)
 
     # Compute accuracy if y is provided

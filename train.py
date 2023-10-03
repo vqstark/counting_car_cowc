@@ -76,8 +76,8 @@ def train(args, hyps):
 
     # Compute class weights
     class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-    batch_class_weights = [list(class_weights) for _ in range(batch_size)]
-    class_weights = torch.tensor(batch_class_weights, dtype=torch.float32)
+    # batch_class_weights = [list(class_weights) for _ in range(batch_size)]
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
     val_ds = COWC(paths = args.annotation_val_path, 
                     root = args.imgs_val_path, 
@@ -99,7 +99,7 @@ def train(args, hyps):
         drop_last=True
     )
 
-    model = ResCeptionNet(num_classes = max_car).float()
+    model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
 
     # Optimizer
     # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
@@ -156,7 +156,7 @@ def train(args, hyps):
 
             one_hot = F.one_hot(label, num_classes=max_car+1)
 
-            loss, *metrics = model(img.float(), one_hot.float(), class_weights)
+            loss, *metrics = model(img.float(), one_hot.float())
 
             if not torch.isfinite(loss):
                 # import ipdb; ipdb.set_trace()
