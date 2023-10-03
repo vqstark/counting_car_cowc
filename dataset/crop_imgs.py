@@ -234,8 +234,8 @@ if __name__ == "__main__":
 
 	if args.mode == 'resnet50':
 		hyps['CROP_SIZE'] = 96
-		hyps['MAX_CAR'] = 10
-		hyps['batch_size'] = 16
+		hyps['MAX_CAR'] = 9
+		hyps['batch_size'] = 32
 
 	print(args)
 	print(hyps)
