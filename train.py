@@ -75,11 +75,6 @@ def train(args, hyps):
         drop_last=True
     )
 
-    # Compute class weights
-    class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-    # batch_class_weights = [list(class_weights) for _ in range(batch_size)]
-    class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
-
     val_ds = COWC(paths = args.annotation_val_path, 
                     root = args.imgs_val_path, 
                     crop_size=int(hyps['CROP_SIZE']), 
@@ -100,8 +95,14 @@ def train(args, hyps):
         drop_last=True
     )
 
-    # model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
-    model = ResNet(num_classes = max_car, class_weights=class_weights).float()
+    if args.mode == 'resnet50':
+        # Compute class weights
+        class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
+        class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
+        
+        model = ResNet(num_classes = max_car, class_weights=class_weights).float()
+    else:
+        model = ResCeptionNet(num_classes = max_car).float()
 
     # Optimizer
     # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
@@ -243,9 +244,14 @@ if __name__ == '__main__':
     parser.add_argument('--results_file', type=str, default='weights/results.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
+    parser.add_argument('--mode', type=str, default='resception_net')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)
+
+    if args.mode == 'resnet50':
+        hyps['CROP_SIZE'] = 96
+        
     print(args)
     print(hyps)
 
