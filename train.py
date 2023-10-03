@@ -158,9 +158,8 @@ def train(args, hyps):
 
             loss, *metrics = model(img.float(), one_hot.float())
 
-            if not torch.isfinite(loss):
-                # import ipdb; ipdb.set_trace()
-                print('WARNING: non-finite loss, ending training ')
+            if torch.isnan(loss) or torch.isinf(loss):
+                print('WARNING: NaN or infinite loss, ending training')
                 break
             if bool(loss == 0):
                 continue
