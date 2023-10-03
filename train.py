@@ -161,11 +161,11 @@ def train(args, hyps):
 
             loss, *metrics = model(img.float(), one_hot.float())
 
-            if torch.isnan(loss) or torch.isinf(loss):
-                print('WARNING: NaN or infinite loss, ending training')
-                break
-            if bool(loss == 0):
-                continue
+            # if torch.isnan(loss) or torch.isinf(loss):
+            #     print('WARNING: NaN or infinite loss, ending training')
+            #     break
+            # if bool(loss == 0):
+            #     continue
 
             # calculate gradient
             loss.backward()
