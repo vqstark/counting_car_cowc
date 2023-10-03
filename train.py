@@ -99,7 +99,7 @@ def train(args, hyps):
         # Compute class weights
         class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
         class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
-        
+
         model = ResNet(num_classes = max_car, class_weights=class_weights).float()
     else:
         model = ResCeptionNet(num_classes = max_car).float()
@@ -251,6 +251,8 @@ if __name__ == '__main__':
 
     if args.mode == 'resnet50':
         hyps['CROP_SIZE'] = 96
+        hyps['MAX_CAR'] = 10
+        hyps['batch_size'] = 16
         
     print(args)
     print(hyps)
