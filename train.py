@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 from models.model import ResCeptionNet
+from models.resnet50 import ResNet
 from utils.utils import hyp_parse, model_info
 from dataset import *
 
@@ -99,7 +100,8 @@ def train(args, hyps):
         drop_last=True
     )
 
-    model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
+    # model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
+    model = ResNet(num_classes = max_car, class_weights=class_weights).float()
 
     # Optimizer
     # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
