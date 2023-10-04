@@ -49,9 +49,13 @@ class ResNet(nn.Module):
         return loss, accuracy, precision, recall, f1
     
     def adding_score(self, predicted, true_labels):
-        precision_per_classes = []
-        recall_per_classes = []
-        f1_per_classes = []
+        precision_per_classes = list()
+        recall_per_classes = list()
+        f1_per_classes = list()
+
+        predicted = predicted.cpu()
+        true_labels = true_labels.cpu()
+
         for i in range(self.num_classes):
             true_positives = torch.sum((predicted == i) & (true_labels == i)).float()
             false_positives = torch.sum((predicted == i) & (true_labels != i)).float()
@@ -65,7 +69,11 @@ class ResNet(nn.Module):
             recall_per_classes.append(recall_i)
             f1_per_classes.append(f1_i)
 
-        return np.mean(np.array(precision_per_classes)), np.mean(np.array(recall_per_classes)), np.mean(np.array(f1_per_classes))
+        precision_per_classes_tensor = torch.tensor(precision_per_classes).cuda()
+        recall_per_classes_tensor = torch.tensor(recall_per_classes).cuda()
+        f1_per_classes_tensor = torch.tensor(f1_per_classes).cuda()
+
+        return torch.mean(precision_per_classes_tensor), torch.mean(recall_per_classes_tensor), torch.mean(f1_per_classes_tensor)
 
 
     def predict(self, x):

@@ -80,23 +80,31 @@ class ResCeptionNet(nn.Module):
     return loss, accuracy, precision, recall, f1
   
   def adding_score(self, predicted, true_labels):
-      precision_per_classes = []
-      recall_per_classes = []
-      f1_per_classes = []
-      for i in range(self.num_classes):
-          true_positives = torch.sum((predicted == i) & (true_labels == i)).float()
-          false_positives = torch.sum((predicted == i) & (true_labels != i)).float()
-          false_negatives = torch.sum((predicted != i) & (true_labels == i)).float()
+        precision_per_classes = list()
+        recall_per_classes = list()
+        f1_per_classes = list()
 
-          precision_i = true_positives / (true_positives + false_positives + 1e-15)
-          recall_i = true_positives / (true_positives + false_negatives + 1e-15)
-          f1_i = 2 * (precision_i * recall_i) / (precision_i + recall_i + 1e-15)
+        predicted = predicted.cpu()
+        true_labels = true_labels.cpu()
 
-          precision_per_classes.append(precision_i)
-          recall_per_classes.append(recall_i)
-          f1_per_classes.append(f1_i)
+        for i in range(self.num_classes):
+            true_positives = torch.sum((predicted == i) & (true_labels == i)).float()
+            false_positives = torch.sum((predicted == i) & (true_labels != i)).float()
+            false_negatives = torch.sum((predicted != i) & (true_labels == i)).float()
 
-      return np.mean(np.array(precision_per_classes)), np.mean(np.array(recall_per_classes)), np.mean(np.array(f1_per_classes))
+            precision_i = true_positives / (true_positives + false_positives + 1e-15)
+            recall_i = true_positives / (true_positives + false_negatives + 1e-15)
+            f1_i = 2 * (precision_i * recall_i) / (precision_i + recall_i + 1e-15)
+
+            precision_per_classes.append(precision_i)
+            recall_per_classes.append(recall_i)
+            f1_per_classes.append(f1_i)
+
+        precision_per_classes_tensor = torch.tensor(precision_per_classes).cuda()
+        recall_per_classes_tensor = torch.tensor(recall_per_classes).cuda()
+        f1_per_classes_tensor = torch.tensor(f1_per_classes).cuda()
+
+        return torch.mean(precision_per_classes_tensor), torch.mean(recall_per_classes_tensor), torch.mean(f1_per_classes_tensor)
 
 
   def predict(self, x):
