@@ -232,10 +232,8 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	hyps = hyp_parse(args.hyp)
 
-	if args.mode == 'resnet50':
-		hyps['CROP_SIZE'] = 96
+	if hyps['CROP_SIZE'] <= 96:
 		hyps['MAX_CAR'] = 9
-		hyps['batch_size'] = 32
 
 	print(args)
 	print(hyps)

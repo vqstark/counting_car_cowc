@@ -5,11 +5,12 @@ import numpy as np
 from models.layers import ResCeption
 
 class ResCeptionNet(nn.Module):
-  def __init__(self, num_classes, input_shape = (3, None, None)):
+  def __init__(self, num_classes, class_weights=None):
     super(ResCeptionNet, self).__init__()
 
     input_channels = 3
     self.num_classes = num_classes + 1
+    self.class_weights = class_weights
 
     self.ff = nn.ModuleList()
     # Block 1
@@ -46,7 +47,11 @@ class ResCeptionNet(nn.Module):
     self.fc = nn.Linear(640, self.num_classes)
     self.softmax = nn.LogSoftmax(dim=1)
     
-    self.loss = nn.CrossEntropyLoss()
+    if torch.is_tensor(self.class_weights):
+        self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
+    else:
+        self.loss = nn.CrossEntropyLoss()
+
     self.init_weights()
 
   def init_weights(self):

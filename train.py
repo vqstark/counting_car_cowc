@@ -95,16 +95,17 @@ def train(args, hyps):
         drop_last=True
     )
 
-    if args.mode == 'resnet50':
+    class_weights = None
+    if args.use_class_weights:
         # Compute class weights
-        # class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-        # class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
+        class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
+        class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
-        # model = ResNet(num_classes = max_car, class_weights=class_weights).float()
-        model = ResNet(num_classes = max_car).float()
+    if args.mode == 'resnet50':
+        model = ResNet(num_classes = max_car, class_weights=class_weights).float()
     else:
-        model = ResCeptionNet(num_classes = max_car).float()
-
+        model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
+    
     # Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
     # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
@@ -246,14 +247,13 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
     parser.add_argument('--mode', type=str, default='resception_net')
+    parser.add_argument('--use_class_weights', type=bool, default=False, help='Use class weights')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)
 
-    if args.mode == 'resnet50':
-        hyps['CROP_SIZE'] = 96
+    if hyps['CROP_SIZE'] <= 96:
         hyps['MAX_CAR'] = 9
-        hyps['batch_size'] = 32
         
     print(args)
     print(hyps)
