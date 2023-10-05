@@ -6,18 +6,18 @@ from tqdm import tqdm
 import numpy as np
 import torch.nn.functional as F
 import torch.nn as nn
+from torch.utils.data import WeightedRandomSampler
 
 from models.model import ResCeptionNet
 from models.resnet50 import ResNet
 from utils.utils import hyp_parse, model_info
 from dataset import *
 
-def compute_histogram(dataset):
+def compute_histogram(labels):
     print('Computing histogram')
     hist = np.zeros(shape=[10**3, ], dtype=int)
     
-    for idx in tqdm(range(dataset.__len__())):
-        label = dataset[idx]['label']
+    for label in tqdm(labels):
         hist[label] += 1
     
     car_count_max = np.where(hist > 0)[0][-1]
@@ -25,17 +25,17 @@ def compute_histogram(dataset):
     return hist[:car_count_max + 1]
 
 def compute_class_weight(histogram, car_max):
+    print('Histogram: ', histogram)
+    histogram_new = np.empty(shape=[(car_max + 1),])
 
-	histogram_new = np.empty(shape=[(car_max + 1),])
+    histogram_new[:car_max] = histogram[:car_max]
+    histogram_new[car_max] = histogram[car_max:].sum()
 
-	histogram_new[:car_max] = histogram[:car_max]
-	histogram_new[car_max] = histogram[car_max:].sum()
+    class_weight = 1.0 / histogram_new
 
-	class_weight = 1.0 / histogram_new
-
-	class_weight /= class_weight.sum()
-
-	return class_weight
+    # class_weight /= class_weight.sum()
+    # print('Weights: ', class_weight)
+    return class_weight
 
 def train(args, hyps):
     epochs = int(hyps['epochs'])
@@ -56,50 +56,72 @@ def train(args, hyps):
         os.remove(f)
 
     train_ds = COWC(paths = args.annotation_train_path, 
-                    root = args.imgs_train_path, 
-                    crop_size=int(hyps['CROP_SIZE']), 
-                    transpose_image=True,
-                    return_mask=False, 
-                    count_ignore_width=int(hyps['MARGIN']),
-                    label_max=max_car,
-                    random_crop=True,
-                    random_flip=True, 
-                    _random_color_distort=True)
+                    root = args.imgs_train_path)
+    
+    # Get labels from dataset
+    print('Computing histogram')
+    hist = np.zeros(shape=[10**3, ], dtype=int)
+    labels = list()
+    for item in train_ds:
+        label = int((item['mask'][:, :] > 0).sum())
+        if label > max_car:
+            label = max_car
+        labels.append(label)
+        hist[label] += 1
+    hist = hist[:max_car + 1]
+
+    # Compute class weights
+    weights = compute_class_weight(hist, max_car)
+    samples_weight = np.array([weights[i] for i in labels])
+    samples_weight = torch.from_numpy(samples_weight)
+    print(samples_weight)
+    sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
+
+    train_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
+                        mean = train_ds.mean,
+                        transpose_image=True,
+                        count_ignore_width=int(hyps['MARGIN']),
+                        label_max=max_car,
+                        random_crop=True,
+                        random_flip=True, 
+                        _random_color_distort=True)
 
     train_loader = torch.utils.data.DataLoader(
         dataset=train_ds,
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
-        shuffle=True,
+        collate_fn = train_collater,
+        sampler=sampler,
         pin_memory=True,
         drop_last=True
     )
 
     val_ds = COWC(paths = args.annotation_val_path, 
-                    root = args.imgs_val_path, 
-                    crop_size=int(hyps['CROP_SIZE']), 
-                    transpose_image=True,
-                    return_mask=False, 
-                    count_ignore_width=0,
-                    label_max=max_car,
-                    random_crop=True,
-                    random_flip=True, 
-                    _random_color_distort=True)
+                    root = args.imgs_val_path)
+    
+    val_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
+                        mean = val_ds.mean,
+                        transpose_image=True,
+                        count_ignore_width=0,
+                        label_max=max_car,
+                        random_crop=True,
+                        random_flip=True, 
+                        _random_color_distort=True)
 
     val_loader = torch.utils.data.DataLoader(
         dataset=val_ds,
-        batch_size=batch_size,
+        batch_size=batch_size*2,
         num_workers=os.cpu_count() - 1,
+        collate_fn = val_collater,
         shuffle=True,
         pin_memory=True,
         drop_last=True
     )
 
     class_weights = None
-    if args.use_class_weights:
-        # Compute class weights
-        class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-        class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
+    # if args.use_class_weights:
+    #     class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
+    #     class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
     if args.mode == 'resnet50':
         model = ResNet(num_classes = max_car, class_weights=class_weights).float()
@@ -107,7 +129,7 @@ def train(args, hyps):
         model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
     
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
     # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
@@ -154,12 +176,12 @@ def train(args, hyps):
             
             model.train()
             optimizer.zero_grad()
-            img, label = batch['image'], batch['label']
+            img, label = batch['image'], batch['label'].long()
 
             if torch.cuda.is_available():
                 img, label = img.cuda(), label.cuda()
 
-            one_hot = F.one_hot(label, num_classes=max_car+1)
+            one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1)
 
             loss, *metrics = model(img.float(), one_hot.float())
 
@@ -190,12 +212,12 @@ def train(args, hyps):
         with torch.no_grad():
             for i, (ni, batch) in enumerate(pbar):
                 
-                img, label = batch['image'], batch['label']
+                img, label = batch['image'], batch['label'].long()
 
                 if torch.cuda.is_available():
                     img, label = img.cuda(), label.cuda()
 
-                one_hot = F.one_hot(label, num_classes=max_car+1)
+                one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1)
 
                 val_loss, *val_metrics = model(img.float(), one_hot.float())
 
@@ -238,16 +260,16 @@ def train(args, hyps):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a counter')
     parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
-    parser.add_argument('--annotation_train_path', type=str, default='../../DATN/cowc_processed/train_val/crop/train.txt')
-    parser.add_argument('--imgs_train_path', type=str, default='../../DATN/cowc_processed/train_val/crop/train')
-    parser.add_argument('--annotation_val_path', type=str, default='../../DATN/cowc_processed/train_val/crop/val.txt')
-    parser.add_argument('--imgs_val_path', type=str, default='../../DATN/cowc_processed/train_val/crop/val')
+    parser.add_argument('--annotation_train_path', type=str, default='../cowc_processed/train_val/crop/train.txt')
+    parser.add_argument('--imgs_train_path', type=str, default='../cowc_processed/train_val/crop/train')
+    parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
+    parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
     parser.add_argument('--resume', type=bool, default=False, help='Resume training')
     parser.add_argument('--results_file', type=str, default='weights/results.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
-    parser.add_argument('--mode', type=str, default='resception_net')
-    parser.add_argument('--use_class_weights', type=bool, default=False, help='Use class weights')
+    parser.add_argument('--mode', type=str, default='resnet50')
+    parser.add_argument('--use_class_weights', type=bool, default=True, help='Use class weights')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)

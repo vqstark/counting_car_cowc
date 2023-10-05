@@ -217,13 +217,13 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument('--root_dir', help='Root directory for cowc ground_truth_sets dir',
-						default='../../DATN/cowc/datasets/ground_truth_sets')
+						default='../cowc/datasets/ground_truth_sets')
 	parser.add_argument('--dest-dir', help='Root directory for cowc ground_truth_sets dir',
-						default='../../DATN/cowc_processed')
+						default='../cowc_processed')
 	parser.add_argument('--scene-list', help='Path to a text listing up source cowc image and label data',
-						default='../../DATN/cowc_processed/train_val/train_val_scenes.txt')
+						default='../cowc_processed/train_val/train_val_scenes.txt')
 	parser.add_argument('--out-dir', '-o', help='Output directory',
-						default='../../DATN/cowc_processed/train_val/crop')
+						default='../cowc_processed/train_val/crop')
 	parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
 	parser.add_argument('--seed', help='Random seed to suffle train/val crops', type=int, 
 						default=0)
