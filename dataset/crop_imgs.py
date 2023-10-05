@@ -91,7 +91,9 @@ def gen_train_area_mask(h, w, grid_size):
 	return train_area_mask
 
 
-def gen_crops_from_scene(image, label_car, label_neg, train_area_mask, out_basename, train_dst, val_dst, tcrop_size, vcrop_size, seed):
+def gen_crops_from_scene(image, label_car, label_neg, 
+						 train_area_mask, out_basename, train_dst, val_dst, 
+						 tcrop_size, vcrop_size, total_histogram, max_car, max_samples_per_class, seed):
 
 	h, w, _ = image.shape
 
@@ -123,12 +125,24 @@ def gen_crops_from_scene(image, label_car, label_neg, train_area_mask, out_basen
 
 		crop_filename = "{}_{}_{}.png".format(out_basename, y, x)
 
+		image_crop = image[top:bottom, left:right]
+		label_crop = label_car[top:bottom, left:right]
+
 		if is_train:
 			# Check if the crop has overlap with val crops already extracted.
 			if val_crop_footprint[top:bottom, left:right].max() == True:
 				continue
 
 			train_crop_footprint[top:bottom, left:right] = True
+
+			# Check number of all classes
+			int_label = int(label_crop.sum() / 255)
+			if int_label > max_car:
+				int_label = max_car
+			if total_histogram[int_label] >= max_samples_per_class:
+				continue
+			total_histogram[int_label] += 1
+
 			train_filenames.append(crop_filename)
 			train_centers.append((y, x))
 
@@ -141,9 +155,6 @@ def gen_crops_from_scene(image, label_car, label_neg, train_area_mask, out_basen
 			val_filenames.append(crop_filename)
 			val_centers.append((y, x))
 
-		image_crop = image[top:bottom, left:right]
-		label_crop = label_car[top:bottom, left:right]
-
 		out_image = np.empty(shape=(crop_size, crop_size * 2, 3), dtype=np.uint8)
 		out_image[:, :crop_size] = image_crop
 		out_image[:, crop_size:] = np.repeat(label_crop[:, :, None], 3, axis=2)
@@ -154,10 +165,10 @@ def gen_crops_from_scene(image, label_car, label_neg, train_area_mask, out_basen
 			out_path = os.path.join(dst_dir, crop_filename)
 			io.imsave(out_path, out_image)
 
-	return train_filenames, val_filenames, train_centers, val_centers
+	return train_filenames, val_filenames, train_centers, val_centers, total_histogram
 
 
-def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, grid_size, seed):
+def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, grid_size, max_car, max_samples_per_class, seed):
 
 	train_dst  = None if (out_dir is None) else os.path.join(out_dir, "train")
 	val_dst    = None if (out_dir is None) else os.path.join(out_dir, "val")
@@ -175,6 +186,7 @@ def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, g
 
 	train_filenames = []
 	val_filenames = []
+	total_histogram = [0] * (max_car+1)
 
 	for idx, scene in enumerate(scenes):
 		scene = scene.rstrip()
@@ -199,7 +211,9 @@ def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, g
 
 		out_basename, _ = os.path.splitext(os.path.basename(image_path))
 
-		train_crops, val_crops, _, _ = gen_crops_from_scene(image, label_car, label_neg, train_area_mask, out_basename, train_dst, val_dst, tcrop_size, vcrop_size, seed)
+		train_crops, val_crops, _, _, total_histogram = gen_crops_from_scene(image, label_car, label_neg, 
+													  train_area_mask, out_basename, train_dst, val_dst, 
+													  tcrop_size, vcrop_size, total_histogram, max_car, max_samples_per_class, seed)
 
 		train_filenames.extend(train_crops)
 		val_filenames.extend(val_crops)
@@ -211,6 +225,7 @@ def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, g
 		dump_crop_filenames(val_list, val_filenames)
 
 	print("Done!")
+	return total_histogram
 
 if __name__ == "__main__":
 
@@ -225,15 +240,14 @@ if __name__ == "__main__":
 	parser.add_argument('--out-dir', '-o', help='Output directory',
 						default='../cowc_processed/train_val/crop')
 	parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
+	parser.add_argument('--max_samples_per_class', help='', type=int, 
+						default=2000)
 	parser.add_argument('--seed', help='Random seed to suffle train/val crops', type=int, 
 						default=0)
-	parser.add_argument('--mode', type=str, default='resception_net')
+	parser.add_argument('--mode', type=str, default='resnet50')
 
 	args = parser.parse_args()
 	hyps = hyp_parse(args.hyp)
-
-	if hyps['CROP_SIZE'] <= 96:
-		hyps['MAX_CAR'] = 9
 
 	print(args)
 	print(hyps)
@@ -243,5 +257,8 @@ if __name__ == "__main__":
 	vcrop_size = int(hyps['CROP_SIZE'])
 	tcrop_size = vcrop_size + 2 * int(hyps['MARGIN'])
 	grid_size = int(hyps['GRID_SIZE'])
+	max_car = int(hyps['MAX_CAR'])
+	max_samples_per_class = args.max_samples_per_class
 
-	gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, tcrop_size, vcrop_size, grid_size, args.seed)
+	histogram = gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, tcrop_size, vcrop_size, grid_size, max_car, max_samples_per_class, args.seed)
+	print('Histogram: ',histogram)
