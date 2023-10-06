@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet50
 import numpy as np
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 class ResNet(nn.Module):
     def __init__(self, num_classes, class_weights=None):
@@ -45,8 +46,12 @@ class ResNet(nn.Module):
 
                 accuracy = torch.sum(predicted == true_labels).float() / y.size(0)
                 precision, recall, f1 = self.adding_score(predicted, true_labels)
+
+                f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                precision_sc = precision_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                recall_sc = recall_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
                 
-        return loss, accuracy, precision, recall, f1
+        return loss, accuracy, precision_sc, recall_sc, f1_sc
     
     def adding_score(self, predicted, true_labels):
         precision_per_classes = list()

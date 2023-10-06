@@ -91,7 +91,7 @@ def train(args, hyps):
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = train_collater,
-        sampler=sampler,
+        # sampler=sampler,
         pin_memory=True,
         drop_last=True
     )
@@ -110,7 +110,7 @@ def train(args, hyps):
 
     val_loader = torch.utils.data.DataLoader(
         dataset=val_ds,
-        batch_size=batch_size*2,
+        batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = val_collater,
         shuffle=True,
