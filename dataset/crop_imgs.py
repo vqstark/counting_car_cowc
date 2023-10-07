@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 from skimage import io
 from tqdm import tqdm
+import random
 
 Image.MAX_IMAGE_PIXELS = 1000000000
 
@@ -71,7 +72,8 @@ def gen_train_area_mask(h, w, grid_size):
 
 			grid_cell = np.ones(shape=[grid_size, grid_size], dtype=bool)
 
-			# Divide a cell on the grid into 4 parts and assign botom-right one as val and others as train.
+			# Divide a cell on the grid into 4 parts and assign random one as val and others as train.
+			val_grid = random.randint(0,3)
 			for j in range(2):
 				for i in range(2):
 
@@ -80,7 +82,7 @@ def gen_train_area_mask(h, w, grid_size):
 					bottom_local = top_local + grid_size // 2
 					right_local = left_local + grid_size // 2
 
-					if (j * 2 + i) == 3:
+					if (j * 2 + i) == val_grid:
 						grid_cell[top_local:bottom_local, left_local:right_local] = False
 
 			train_area_mask[top:bottom, left:right] = grid_cell

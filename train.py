@@ -13,19 +13,18 @@ from models.resnet50 import ResNet
 from utils.utils import hyp_parse, model_info
 from dataset import *
 
-def compute_histogram(labels):
-    print('Computing histogram')
+def compute_histogram(dataset, max_car):
     hist = np.zeros(shape=[10**3, ], dtype=int)
-    
-    for label in tqdm(labels):
+    labels = list()
+    for item in dataset:
+        label = int((item['mask'][:, :] > 0).sum())
+        if label > max_car:
+            label = max_car
+        labels.append(label)
         hist[label] += 1
-    
-    car_count_max = np.where(hist > 0)[0][-1]
-    
-    return hist[:car_count_max + 1]
+    return labels, hist[:max_car + 1]
 
 def compute_class_weight(histogram, car_max):
-    print('Histogram: ', histogram)
     histogram_new = np.empty(shape=[(car_max + 1),])
 
     histogram_new[:car_max] = histogram[:car_max]
@@ -33,8 +32,6 @@ def compute_class_weight(histogram, car_max):
 
     class_weight = 1.0 / histogram_new
 
-    # class_weight /= class_weight.sum()
-    # print('Weights: ', class_weight)
     return class_weight
 
 def train(args, hyps):
@@ -58,24 +55,17 @@ def train(args, hyps):
     train_ds = COWC(paths = args.annotation_train_path, 
                     root = args.imgs_train_path)
     
+    print('Computing histogram and sample weights for train ds:')
     # Get labels from dataset
-    print('Computing histogram')
-    hist = np.zeros(shape=[10**3, ], dtype=int)
-    labels = list()
-    for item in train_ds:
-        label = int((item['mask'][:, :] > 0).sum())
-        if label > max_car:
-            label = max_car
-        labels.append(label)
-        hist[label] += 1
-    hist = hist[:max_car + 1]
+    train_labels, train_histogram = compute_histogram(train_ds, max_car)
 
     # Compute class weights
-    weights = compute_class_weight(hist, max_car)
-    samples_weight = np.array([weights[i] for i in labels])
-    samples_weight = torch.from_numpy(samples_weight)
-    print(samples_weight)
-    sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
+    train_weights = compute_class_weight(train_histogram, max_car)
+    train_samples_weight = np.array([train_weights[i] for i in train_labels])
+    train_samples_weight = torch.from_numpy(train_samples_weight)
+    print('Histogram: ', train_histogram)
+    print('Class weights: ', train_weights)
+    train_sampler = WeightedRandomSampler(train_samples_weight, len(train_samples_weight))
 
     train_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
                         mean = train_ds.mean,
@@ -91,13 +81,24 @@ def train(args, hyps):
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = train_collater,
-        # sampler=sampler,
+        sampler=train_sampler,
+        # shuffle=True,
         pin_memory=True,
         drop_last=True
     )
 
     val_ds = COWC(paths = args.annotation_val_path, 
                     root = args.imgs_val_path)
+
+    print('Computing histogram and sample weights for val ds:')
+    val_labels, val_histogram = compute_histogram(val_ds, max_car)
+
+    val_weights = compute_class_weight(val_histogram, max_car)
+    val_samples_weight = np.array([val_weights[i] for i in val_labels])
+    val_samples_weight = torch.from_numpy(val_samples_weight)
+    print('Histogram: ', val_histogram)
+    print('Class weights: ', val_weights)
+    val_sampler = WeightedRandomSampler(val_samples_weight, len(val_samples_weight))
     
     val_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
                         mean = val_ds.mean,
@@ -113,15 +114,17 @@ def train(args, hyps):
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = val_collater,
-        shuffle=True,
+        sampler=val_sampler,
+        # shuffle=True,
         pin_memory=True,
         drop_last=True
     )
 
     class_weights = None
-    # if args.use_class_weights:
-    #     class_weights = compute_class_weight(compute_histogram(train_ds), max_car)
-    #     class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
+    if args.use_class_weights:
+        class_weights = compute_class_weight(train_histogram, max_car)
+        class_weights /= class_weights.sum()
+        class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
     if args.mode == 'resnet50':
         model = ResNet(num_classes = max_car, class_weights=class_weights).float()
@@ -129,8 +132,8 @@ def train(args, hyps):
         model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
     
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
-    # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
+    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
+    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
@@ -269,13 +272,10 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
     parser.add_argument('--mode', type=str, default='resnet50')
-    parser.add_argument('--use_class_weights', type=bool, default=True, help='Use class weights')
+    parser.add_argument('--use_class_weights', type=bool, default=False, help='Use class weights')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)
-
-    if hyps['CROP_SIZE'] <= 96:
-        hyps['MAX_CAR'] = 9
         
     print(args)
     print(hyps)

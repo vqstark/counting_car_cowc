@@ -42,9 +42,14 @@ class ResCeptionNet(nn.Module):
     self.ff.append(ResCeption(in_channels=512, out_channels=(576, (160, 320), (32, 128), 128)))
     self.ff.append(ResCeption(in_channels=576, out_channels=(640, (192, 384), (48, 128), 128)))
     # Block 6
+    self.ff.append(nn.AvgPool2d(5, 3, 0))
+    self.ff.append(nn.Conv2d(640, 128, 1, 1, 0))
+    self.ff.append(nn.BatchNorm2d(128, eps=1e-5,momentum=0.9))
+    self.ff.append(nn.ReLU(inplace=True))
+
     self.ff.append(nn.AdaptiveAvgPool2d(1))
 
-    self.fc = nn.Linear(640, self.num_classes)
+    self.fc = nn.Linear(128, self.num_classes)
     self.softmax = nn.LogSoftmax(dim=1)
     
     if torch.is_tensor(self.class_weights):
