@@ -68,8 +68,6 @@ class Collater(object):
             # Remove car annotation outside the valid area
             ignore = self.count_ignore_width
             label = (mask[ignore:-ignore, ignore:-ignore] > 0).sum()
-            if ignore == 0:
-                label = (mask[:, :] > 0).sum()
 
             if label > self.label_max:
                 label = self.label_max

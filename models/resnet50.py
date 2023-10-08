@@ -15,10 +15,10 @@ class ResNet(nn.Module):
 
         num_features = self.resnet50.fc.in_features
         self.resnet50.fc = nn.Sequential(
-            nn.Linear(num_features, 512),  # Custom fully connected layer
+            nn.Linear(num_features, 256),  # Custom fully connected layer
             nn.ReLU(inplace=True),
-            nn.Dropout(0.5),
-            nn.Linear(512, self.num_classes)  # Output layer with num_classes units
+            # nn.Dropout(0.5),
+            nn.Linear(256, self.num_classes)  # Output layer with num_classes units
         )
 
         self.softmax = nn.LogSoftmax(dim=1)
