@@ -95,172 +95,180 @@ def gen_train_area_mask(h, w, grid_size):
 
 def gen_crops_from_scene(image, label_car, label_neg, 
 						 train_area_mask, out_basename, train_dst, val_dst, 
-						 tcrop_size, vcrop_size, total_histogram, max_car, max_samples_per_class, seed):
+						 tcrop_size, vcrop_size, train_histogram, val_histogram, max_car, max_samples_per_class, seed):
 
-	h, w, _ = image.shape
+  h, w, _ = image.shape
 
-	crop_centers = get_crop_centers(label_car, label_neg, seed)
+  crop_centers = get_crop_centers(label_car, label_neg, seed)
 
-	train_crop_footprint = np.zeros(shape=[h, w], dtype=bool)
-	val_crop_footprint = np.zeros(shape=[h, w], dtype=bool)
+  train_crop_footprint = np.zeros(shape=[h, w], dtype=bool)
+  val_crop_footprint = np.zeros(shape=[h, w], dtype=bool)
 
-	train_filenames = []
-	val_filenames = []
+  train_filenames = []
+  val_filenames = []
 
-	train_centers = []
-	val_centers = []
+  train_centers = []
+  val_centers = []
 
-	for crop_center in tqdm(crop_centers):
+  for crop_center in tqdm(crop_centers):
 
-		y, x = crop_center
+    y, x = crop_center
 
-		is_train = train_area_mask[y, x]
-		crop_size = tcrop_size if is_train else vcrop_size
+    is_train = train_area_mask[y, x]
+    crop_size = tcrop_size if is_train else vcrop_size
 
-		top = y - crop_size // 2
-		left = x - crop_size // 2
-		bottom = top + crop_size
-		right = left + crop_size
+    top = y - crop_size // 2
+    left = x - crop_size // 2
+    bottom = top + crop_size
+    right = left + crop_size
 
-		if (top < 0) or (left < 0) or (bottom > h) or (right > w):
-			continue
+    if (top < 0) or (left < 0) or (bottom > h) or (right > w):
+      continue
 
-		crop_filename = "{}_{}_{}.png".format(out_basename, y, x)
+    crop_filename = "{}_{}_{}.png".format(out_basename, y, x)
 
-		image_crop = image[top:bottom, left:right]
-		label_crop = label_car[top:bottom, left:right]
+    image_crop = image[top:bottom, left:right]
+    label_crop = label_car[top:bottom, left:right]
 
-		if is_train:
-			# Check if the crop has overlap with val crops already extracted.
-			if val_crop_footprint[top:bottom, left:right].max() == True:
-				continue
+    int_label = int(label_crop.sum() / 255)
+    if int_label > max_car:
+      int_label = max_car
 
-			train_crop_footprint[top:bottom, left:right] = True
+    if is_train:
+      # Check if the crop has overlap with val crops already extracted.
+      if val_crop_footprint[top:bottom, left:right].max() == True:
+        continue
 
-			# Check number of all classes
-			int_label = int(label_crop.sum() / 255)
-			if int_label > max_car:
-				int_label = max_car
-			if total_histogram[int_label] >= max_samples_per_class:
-				continue
-			total_histogram[int_label] += 1
+      train_crop_footprint[top:bottom, left:right] = True
 
-			train_filenames.append(crop_filename)
-			train_centers.append((y, x))
+      # Check number of all classes
+      if train_histogram[int_label] >= max_samples_per_class:
+        continue
+      train_histogram[int_label] += 1
 
-		else:
-			# Check if the crop has overlap with train crops already extracted.
-			if train_crop_footprint[top:bottom, left:right].max() == True:
-				continue
+      train_filenames.append(crop_filename)
+      train_centers.append((y, x))
 
-			val_crop_footprint[top:bottom, left:right] = True
-			val_filenames.append(crop_filename)
-			val_centers.append((y, x))
+    else:
+      # Check if the crop has overlap with train crops already extracted.
+      if train_crop_footprint[top:bottom, left:right].max() == True:
+        continue
+      
+      # Check number of all classes
+      if val_histogram[int_label] >= max_samples_per_class:
+        continue
+      val_histogram[int_label] += 1
 
-		out_image = np.empty(shape=(crop_size, crop_size * 2, 3), dtype=np.uint8)
-		out_image[:, :crop_size] = image_crop
-		out_image[:, crop_size:] = np.repeat(label_crop[:, :, None], 3, axis=2)
+      val_crop_footprint[top:bottom, left:right] = True
+      val_filenames.append(crop_filename)
+      val_centers.append((y, x))
 
-		dst_dir = train_dst if is_train else val_dst
+    out_image = np.empty(shape=(crop_size, crop_size * 2, 3), dtype=np.uint8)
+    out_image[:, :crop_size] = image_crop
+    out_image[:, crop_size:] = np.repeat(label_crop[:, :, None], 3, axis=2)
 
-		if dst_dir is not None:
-			out_path = os.path.join(dst_dir, crop_filename)
-			io.imsave(out_path, out_image)
+    dst_dir = train_dst if is_train else val_dst
 
-	return train_filenames, val_filenames, train_centers, val_centers, total_histogram
+    if dst_dir is not None:
+      out_path = os.path.join(dst_dir, crop_filename)
+      io.imsave(out_path, out_image)
+
+  return train_filenames, val_filenames, train_centers, val_centers, train_histogram, val_histogram
 
 
 def gen_train_val_crops(root_dir, scene_list, out_dir, tcrop_size, vcrop_size, grid_size, max_car, max_samples_per_class, seed):
 
-	train_dst  = None if (out_dir is None) else os.path.join(out_dir, "train")
-	val_dst    = None if (out_dir is None) else os.path.join(out_dir, "val")
-	train_list = None if (out_dir is None) else os.path.join(out_dir, "train.txt")
-	val_list   = None if (out_dir is None) else os.path.join(out_dir, "val.txt")
+  train_dst  = None if (out_dir is None) else os.path.join(out_dir, "train")
+  val_dst    = None if (out_dir is None) else os.path.join(out_dir, "val")
+  train_list = None if (out_dir is None) else os.path.join(out_dir, "train.txt")
+  val_list   = None if (out_dir is None) else os.path.join(out_dir, "val.txt")
 
-	if train_dst is not None:
-		os.makedirs(train_dst, exist_ok=True)
+  if train_dst is not None:
+    os.makedirs(train_dst, exist_ok=True)
 
-	if val_dst is not None:
-		os.makedirs(val_dst, exist_ok=True)
+  if val_dst is not None:
+    os.makedirs(val_dst, exist_ok=True)
 
-	with open(scene_list) as f:
-		scenes = f.readlines()
+  with open(scene_list) as f:
+    scenes = f.readlines()
 
-	train_filenames = []
-	val_filenames = []
-	total_histogram = [0] * (max_car+1)
+  train_filenames = []
+  val_filenames = []
+  train_histogram = [0] * (max_car+1)
+  val_histogram = [0] * (max_car+1)
 
-	for idx, scene in enumerate(scenes):
-		scene = scene.rstrip()
+  for idx, scene in enumerate(scenes):
+    scene = scene.rstrip()
 
-		print("Loading {} ... ({}/{})".format(scene, idx + 1, len(scenes)))
+    print("Loading {} ... ({}/{})".format(scene, idx + 1, len(scenes)))
 
-		image_path = os.path.join(root_dir, "{}.png".format(scene))
-		car_path = os.path.join(root_dir, "{}_Annotated_Cars.png".format(scene))
-		neg_path = os.path.join(root_dir, "{}_Annotated_Negatives.png".format(scene))
+    image_path = os.path.join(root_dir, "{}.png".format(scene))
+    car_path = os.path.join(root_dir, "{}_Annotated_Cars.png".format(scene))
+    neg_path = os.path.join(root_dir, "{}_Annotated_Negatives.png".format(scene))
 
-		image = io.imread(image_path)
-		image = image[:, :, :3] # remove alpha channel
+    image = io.imread(image_path)
+    image = image[:, :, :3] # remove alpha channel
 
-		label_car = io.imread(car_path)
-		label_car = label_car[:, :, 3] # use alpha channel
+    label_car = io.imread(car_path)
+    label_car = label_car[:, :, 3] # use alpha channel
 
-		label_neg = io.imread(neg_path)
-		label_neg = label_neg[:, :, 3] # use alpha channel
+    label_neg = io.imread(neg_path)
+    label_neg = label_neg[:, :, 3] # use alpha channel
 
-		h, w, _ = image.shape
-		train_area_mask = gen_train_area_mask(h, w, grid_size)
+    h, w, _ = image.shape
+    train_area_mask = gen_train_area_mask(h, w, grid_size)
 
-		out_basename, _ = os.path.splitext(os.path.basename(image_path))
+    out_basename, _ = os.path.splitext(os.path.basename(image_path))
 
-		train_crops, val_crops, _, _, total_histogram = gen_crops_from_scene(image, label_car, label_neg, 
-													  train_area_mask, out_basename, train_dst, val_dst, 
-													  tcrop_size, vcrop_size, total_histogram, max_car, max_samples_per_class, seed)
+    train_crops, val_crops, _, _, train_histogram, val_histogram = gen_crops_from_scene(image, label_car, label_neg, 
+                            train_area_mask, out_basename, train_dst, val_dst, 
+                            tcrop_size, vcrop_size, train_histogram, val_histogram, max_car, max_samples_per_class, seed)
 
-		train_filenames.extend(train_crops)
-		val_filenames.extend(val_crops)
+    train_filenames.extend(train_crops)
+    val_filenames.extend(val_crops)
 
-	if train_list is not None:
-		dump_crop_filenames(train_list, train_filenames)
+  if train_list is not None:
+    dump_crop_filenames(train_list, train_filenames)
 
-	if val_list is not None:
-		dump_crop_filenames(val_list, val_filenames)
+  if val_list is not None:
+    dump_crop_filenames(val_list, val_filenames)
 
-	print("Done!")
-	return total_histogram
+  print("Done!")
+  return train_histogram, val_histogram
 
 if __name__ == "__main__":
 
-	parser = argparse.ArgumentParser()
+  parser = argparse.ArgumentParser()
 
-	parser.add_argument('--root_dir', help='Root directory for cowc ground_truth_sets dir',
-						default='../cowc/datasets/ground_truth_sets')
-	parser.add_argument('--dest-dir', help='Root directory for cowc ground_truth_sets dir',
-						default='../cowc_processed')
-	parser.add_argument('--scene-list', help='Path to a text listing up source cowc image and label data',
-						default='../cowc_processed/train_val/train_val_scenes.txt')
-	parser.add_argument('--out-dir', '-o', help='Output directory',
-						default='../cowc_processed/train_val/crop')
-	parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
-	parser.add_argument('--max_samples_per_class', help='', type=int, 
-						default=2000)
-	parser.add_argument('--seed', help='Random seed to suffle train/val crops', type=int, 
-						default=0)
-	parser.add_argument('--mode', type=str, default='resnet50')
+  parser.add_argument('--root_dir', help='Root directory for cowc ground_truth_sets dir',
+            default='../cowc/datasets/ground_truth_sets')
+  parser.add_argument('--dest-dir', help='Root directory for cowc ground_truth_sets dir',
+            default='../cowc_processed')
+  parser.add_argument('--scene-list', help='Path to a text listing up source cowc image and label data',
+            default='../cowc_processed/train_val/train_val_scenes.txt')
+  parser.add_argument('--out-dir', '-o', help='Output directory',
+            default='../cowc_processed/train_val/crop')
+  parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
+  parser.add_argument('--max_samples_per_class', help='', type=int, 
+            default=1000)
+  parser.add_argument('--seed', help='Random seed to suffle train/val crops', type=int, 
+            default=0)
+  parser.add_argument('--mode', type=str, default='resnet50')
 
-	args = parser.parse_args()
-	hyps = hyp_parse(args.hyp)
+  args = parser.parse_args()
+  hyps = hyp_parse(args.hyp)
 
-	print(args)
-	print(hyps)
+  print(args)
+  print(hyps)
 
-	create_nested_folder(args.dest_dir)
+  create_nested_folder(args.dest_dir)
 
-	vcrop_size = int(hyps['CROP_SIZE'])
-	tcrop_size = vcrop_size + 2 * int(hyps['MARGIN'])
-	grid_size = int(hyps['GRID_SIZE'])
-	max_car = int(hyps['MAX_CAR'])
-	max_samples_per_class = args.max_samples_per_class
+  vcrop_size = int(hyps['CROP_SIZE'])
+  tcrop_size = vcrop_size + 2 * int(hyps['MARGIN'])
+  grid_size = int(hyps['GRID_SIZE'])
+  max_car = int(hyps['MAX_CAR'])
+  max_samples_per_class = args.max_samples_per_class
 
-	histogram = gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, tcrop_size, vcrop_size, grid_size, max_car, max_samples_per_class, args.seed)
-	print('Histogram: ',histogram)
+  train_histogram, val_histogram = gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, tcrop_size, tcrop_size, grid_size, max_car, max_samples_per_class, args.seed)
+  print('Train Histogram: ',train_histogram)
+  print('Val Histogram: ',val_histogram)

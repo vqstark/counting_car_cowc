@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet50
+from torchvision.models import resnet50, ResNet50_Weights
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 
@@ -11,7 +11,7 @@ class ResNet(nn.Module):
         self.num_classes = num_classes + 1
         self.class_weights = class_weights
 
-        self.resnet50 = resnet50(pretrained=False)
+        self.resnet50 = resnet50(weights=ResNet50_Weights.DEFAULT)
 
         num_features = self.resnet50.fc.in_features
         self.resnet50.fc = nn.Sequential(
