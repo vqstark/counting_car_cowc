@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 import numpy as np
 from models.layers import ResCeption
+import torch.nn.functional as F
 
 class ResCeptionNet(nn.Module):
   def __init__(self, num_classes, class_weights=None):
@@ -50,7 +51,7 @@ class ResCeptionNet(nn.Module):
     self.ff.append(nn.AdaptiveAvgPool2d(1))
 
     self.fc = nn.Linear(128, self.num_classes)
-    self.softmax = nn.LogSoftmax(dim=1)
+    # self.softmax = nn.LogSoftmax(dim=1)
     
     if torch.is_tensor(self.class_weights):
         self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
@@ -70,7 +71,7 @@ class ResCeptionNet(nn.Module):
       x = m(x)
     x = x.view(x.size(0), -1)
     x = self.fc(x)
-    x = self.softmax(x)
+    x = F.softmax(x, dim=1)
 
     if not training:
       return self.predict(x)
@@ -119,4 +120,4 @@ class ResCeptionNet(nn.Module):
 
   def predict(self, x):
       _, argmax = torch.max(x, 1)
-      return argmax
+      return x

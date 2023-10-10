@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
+import torch.nn.functional as F
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 
@@ -21,7 +22,7 @@ class ResNet(nn.Module):
             nn.Linear(256, self.num_classes)  # Output layer with num_classes units
         )
 
-        self.softmax = nn.LogSoftmax(dim=1)
+        # self.softmax = nn.LogSoftmax(dim=1)
 
         if torch.is_tensor(self.class_weights):
             self.loss = nn.CrossEntropyLoss(weight = self.class_weights)
@@ -30,7 +31,7 @@ class ResNet(nn.Module):
 
     def forward(self, x, y=None, training=True):
         x = self.resnet50(x) # Features map
-        x = self.softmax(x)
+        x = F.softmax(x, dim=1)
 
         if not training:
             return self.predict(x)
@@ -47,11 +48,12 @@ class ResNet(nn.Module):
                 accuracy = torch.sum(predicted == true_labels).float() / y.size(0)
                 precision, recall, f1 = self.adding_score(predicted, true_labels)
 
-                f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
-                precision_sc = precision_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
-                recall_sc = recall_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                # f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                # precision_sc = precision_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                # recall_sc = recall_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
                 
-        return loss, accuracy, precision_sc, recall_sc, f1_sc
+        # return loss, accuracy, precision_sc, recall_sc, f1_sc
+        return loss, accuracy, precision, recall, f1
     
     def adding_score(self, predicted, true_labels):
         precision_per_classes = list()

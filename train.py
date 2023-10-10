@@ -132,9 +132,9 @@ def train(args, hyps):
         model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
     
     # Optimizer
-    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
-    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.7, 0.9]], gamma=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
+    # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.5]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
     if torch.cuda.is_available():
@@ -238,8 +238,8 @@ def train(args, hyps):
             f.write(s + ' ' + val_s + '\n')
         
         # Checkpoint
-        if val_metrics[-1] > best_f1:
-            best_f1 = val_metrics[-1]
+        if val_mmetrics[-1] > best_f1:
+            best_f1 = val_mmetrics[-1]
 
         with open(results_file, 'r') as f:
             # Create checkpoint
@@ -254,7 +254,7 @@ def train(args, hyps):
         torch.save(chkpt, checkpoint_last)
 
         # Save best checkpoint
-        if best_f1 == val_metrics[-1]:
+        if best_f1 == val_mmetrics[-1]:
             torch.save(chkpt, checkpoint_best)
         
         torch.cuda.empty_cache()
@@ -268,7 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--imgs_train_path', type=str, default='../cowc_processed/train_val/crop/train')
     parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
     parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
-    parser.add_argument('--resume', type=bool, default=False, help='Resume training')
+    parser.add_argument('--resume', type=bool, default=True, help='Resume training')
     parser.add_argument('--results_file', type=str, default='weights/results.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
