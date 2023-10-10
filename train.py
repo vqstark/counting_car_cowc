@@ -268,7 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--imgs_train_path', type=str, default='../cowc_processed/train_val/crop/train')
     parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
     parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
-    parser.add_argument('--resume', type=bool, default=True, help='Resume training')
+    parser.add_argument('--resume', type=bool, default=False, help='Resume training')
     parser.add_argument('--results_file', type=str, default='weights/results.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
