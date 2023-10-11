@@ -7,6 +7,7 @@ import numpy as np
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.utils.data import WeightedRandomSampler
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 from models.model import ResCeptionNet
 from models.resnet50 import ResNet
@@ -127,7 +128,7 @@ def train(args, hyps):
         class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
 
     if args.mode == 'resnet50':
-        model = ResNet(num_classes = max_car, class_weights=class_weights).float()
+        model = ResNet(num_classes = max_car).float()
     else:
         model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
     
@@ -136,6 +137,7 @@ def train(args, hyps):
     # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.5]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
+    criterion = nn.CrossEntropyLoss()
 
     if torch.cuda.is_available():
         model.cuda()
@@ -171,34 +173,43 @@ def train(args, hyps):
 
     for epoch in range(start_epoch,epochs+1):
         # Train process
-        print(('\n' + '%10s' * 6) % ('Epoch', 'loss', 'accuracy', 'precision', 'recall', 'f1'))
+        print(('\n' + '%10s' * 6) % ('Epoch', 'loss', 'acc', 'pre', 'rec', 'f1'))
         pbar = tqdm(enumerate(train_loader), total=len(train_loader))  # progress bar
         mloss = torch.zeros(1).cuda()
         mmetrics = torch.zeros(4).cuda()
+        model.train()
         for i, (ni, batch) in enumerate(pbar):
             
-            model.train()
             optimizer.zero_grad()
             img, label = batch['image'], batch['label'].long()
 
             if torch.cuda.is_available():
                 img, label = img.cuda(), label.cuda()
 
-            one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1)
+            one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1).float()
 
-            loss, *metrics = model(img.float(), one_hot.float())
-
-            # if torch.isnan(loss) or torch.isinf(loss):
-            #     print('WARNING: NaN or infinite loss, ending training')
-            #     break
-            # if bool(loss == 0):
-            #     continue
+            output = model(img.float())
+            loss = criterion(output, one_hot)
 
             # calculate gradient
+            optimizer.zero_grad()
             loss.backward()
-
-            nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+            # nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
+
+            # Compute metrics
+            _, predicted = torch.max(output, 1)
+            true_labels = one_hot.argmax(dim=1)
+
+            # print(predicted)
+            # print(true_labels)
+
+            accuracy = torch.sum(predicted == true_labels).float() / one_hot.size(0)
+            f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+            precision_sc = precision_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+            recall_sc = recall_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+
+            metrics = [accuracy, precision_sc, recall_sc, f1_sc]
 
             mloss = (mloss * i + loss.detach().cuda()) / (i + 1)
             mmetrics = (mmetrics * i + torch.tensor(metrics).cuda()) / (i+1)
@@ -207,7 +218,7 @@ def train(args, hyps):
             pbar.set_description(s)
         
         # Val process
-        print(('\n' + '%10s'*5) % ('val_loss', 'val_accuracy', 'val_precision', 'val_recall', 'val_f1'))
+        print(('\n' + '%10s'*5) % ('val_loss', 'val_acc', 'val_pre', 'val_rec', 'val_f1'))
         pbar = tqdm(enumerate(val_loader), total=len(val_loader))  # progress bar
         val_mloss = torch.zeros(1).cuda()
         val_mmetrics = torch.zeros(4).cuda()
@@ -220,9 +231,21 @@ def train(args, hyps):
                 if torch.cuda.is_available():
                     img, label = img.cuda(), label.cuda()
 
-                one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1)
+                one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1).float()
 
-                val_loss, *val_metrics = model(img.float(), one_hot.float())
+                output = model(img.float())
+                val_loss = criterion(output, one_hot)
+
+                # Compute metrics
+                _, predicted = torch.max(output, 1)
+                true_labels = one_hot.argmax(dim=1)
+
+                accuracy = torch.sum(predicted == true_labels).float() / one_hot.size(0)
+                f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                precision_sc = precision_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+                recall_sc = recall_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
+
+                val_metrics = [accuracy, precision_sc, recall_sc, f1_sc]
 
                 val_mloss = (val_mloss * i + val_loss.detach().cuda()) / (i+1)
                 val_mmetrics = (val_mmetrics * i + torch.tensor(val_metrics).cuda()) / (i+1)
@@ -269,7 +292,7 @@ if __name__ == '__main__':
     parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
     parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
     parser.add_argument('--resume', type=bool, default=False, help='Resume training')
-    parser.add_argument('--results_file', type=str, default='weights/results.txt')
+    parser.add_argument('--results_file', type=str, default='weights/result.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
     parser.add_argument('--mode', type=str, default='resnet50')

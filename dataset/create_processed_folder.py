@@ -1,9 +1,6 @@
 import os
 
-train_val_scenes_content = '''Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_31.99319028-Oct-2007_11-00-31.993_Frame_1-124%
-Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_42.40561128-Oct-2007_11-00-47.194_Frame_74-124%
-Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_52.82681728-Oct-2007_11-01-01.775_Frame_144-124%
-Potsdam_ISPRS/top_potsdam_2_10_RGB
+train_val_scenes_content = '''Potsdam_ISPRS/top_potsdam_2_10_RGB
 Potsdam_ISPRS/top_potsdam_2_11_RGB
 Potsdam_ISPRS/top_potsdam_2_12_RGB
 Potsdam_ISPRS/top_potsdam_2_13_RGB
@@ -22,16 +19,19 @@ Selwyn_LINZ/Selwyn_BX22_Tile_RIGHT_15cm_0003
 Toronto_ISPRS/03553
 Toronto_ISPRS/03559
 Toronto_ISPRS/03747
-Vaihingen_ISPRS/TOP_Mosaic_09cm_scaled_15cm_Gray
-'''
-
-test_scenes_content = '''Utah_AGRC/12TVL180140
-Utah_AGRC/12TVL200180
-Utah_AGRC/12TVL240120
 Utah_AGRC/12TVK220980-CROP
 Utah_AGRC/12TVL160640-CROP
 Utah_AGRC/12TVL160660-CROP
 Utah_AGRC/12TVL220360-CROP
+'''
+
+test_scenes_content = '''Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_31.99319028-Oct-2007_11-00-31.993_Frame_1-124%
+Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_42.40561128-Oct-2007_11-00-47.194_Frame_74-124%
+Columbus_CSUAV_AFRL/EO_Run01_s2_301_15_00_52.82681728-Oct-2007_11-01-01.775_Frame_144-124%
+Utah_AGRC/12TVL180140
+Utah_AGRC/12TVL200180
+Utah_AGRC/12TVL240120
+Vaihingen_ISPRS/TOP_Mosaic_09cm_scaled_15cm_Gray
 '''
 
 def create_nested_folder(out_folder = '/content/cowc_processed'):

@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import torch
+from torchvision import transforms
 
 from dataset.utils import random_color_distort
 
@@ -15,6 +16,9 @@ class Collater(object):
         self._random_color_distort = _random_color_distort
         self.label_max = label_max
         self.mean = mean
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        self.trans = transforms.Compose([self.normalize])
 
     def __call__(self, batch):
         images = [sample['image'] for sample in batch]
@@ -62,12 +66,12 @@ class Collater(object):
                 image = random_color_distort(image)
                 image = np.asarray(image, dtype=np.float64)
 
-            # Normalize
-            image = (image - self.mean) / 255.0
-
             # Remove car annotation outside the valid area
             ignore = self.count_ignore_width
             label = (mask[ignore:-ignore, ignore:-ignore] > 0).sum()
+
+            if ignore == 0:
+                label = (mask > 0).sum()
 
             if label > self.label_max:
                 label = self.label_max
@@ -76,7 +80,10 @@ class Collater(object):
             if self.transpose_image:
                 image = image.transpose(2, 0, 1)
             
-            return_batch_imgs[i, :, :, :] = torch.from_numpy(image)
+            # Normalize
+            image = self.trans(torch.from_numpy(image))
+            
+            return_batch_imgs[i, :, :, :] = image
             return_batch_labels[i, :] = int(label)
 
         return {'image': return_batch_imgs, 

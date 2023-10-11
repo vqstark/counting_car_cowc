@@ -271,6 +271,8 @@ if __name__ == "__main__":
   max_car = int(hyps['MAX_CAR'])
   max_samples_per_class = args.max_samples_per_class
 
-  train_histogram, val_histogram = gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, tcrop_size, tcrop_size, grid_size, max_car, max_samples_per_class, args.seed)
+
+  train_histogram, val_histogram = gen_train_val_crops(args.root_dir, args.scene_list, args.out_dir, 
+                                                        tcrop_size, tcrop_size, grid_size, max_car, max_samples_per_class, args.seed)
   print('Train Histogram: ',train_histogram)
   print('Val Histogram: ',val_histogram)
