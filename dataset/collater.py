@@ -6,7 +6,7 @@ from torchvision import transforms
 from dataset.utils import random_color_distort
 
 class Collater(object):
-    def __init__(self, crop_size=96, mean=None, transpose_image=True, count_ignore_width=8, 
+    def __init__(self, crop_size=96, transpose_image=True, count_ignore_width=8, 
                  random_crop=True, random_flip=True, _random_color_distort=True, label_max=9):
         self.crop_size = crop_size
         self.transpose_image = transpose_image
@@ -15,7 +15,6 @@ class Collater(object):
         self.random_flip = random_flip
         self._random_color_distort = _random_color_distort
         self.label_max = label_max
-        self.mean = mean
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
         self.trans = transforms.Compose([self.normalize])

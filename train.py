@@ -69,7 +69,6 @@ def train(args, hyps):
     train_sampler = WeightedRandomSampler(train_samples_weight, len(train_samples_weight))
 
     train_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
-                        mean = train_ds.mean,
                         transpose_image=True,
                         count_ignore_width=int(hyps['MARGIN']),
                         label_max=max_car,
@@ -82,8 +81,8 @@ def train(args, hyps):
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = train_collater,
-        sampler=train_sampler,
-        # shuffle=True,
+        # sampler=train_sampler,
+        shuffle=True,
         pin_memory=True,
         drop_last=True
     )
@@ -102,7 +101,6 @@ def train(args, hyps):
     val_sampler = WeightedRandomSampler(val_samples_weight, len(val_samples_weight))
     
     val_collater = Collater(crop_size=int(hyps['CROP_SIZE']),
-                        mean = val_ds.mean,
                         transpose_image=True,
                         count_ignore_width=int(hyps['MARGIN']),
                         label_max=max_car,
@@ -115,29 +113,30 @@ def train(args, hyps):
         batch_size=batch_size,
         num_workers=os.cpu_count() - 1,
         collate_fn = val_collater,
-        sampler=val_sampler,
-        # shuffle=True,
+        # sampler=val_sampler,
+        shuffle=True,
         pin_memory=True,
         drop_last=True
     )
+
+    if args.mode == 'resnet50':
+        model = ResNet(num_classes = max_car).float()
+    else:
+        model = ResCeptionNet(num_classes = max_car).float()
+    
+    # Optimizer
+    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
+    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'])
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.5]], gamma=0.1)
+    scheduler.last_epoch = start_epoch - 1
+    criterion = nn.CrossEntropyLoss()
 
     class_weights = None
     if args.use_class_weights:
         class_weights = compute_class_weight(train_histogram, max_car)
         class_weights /= class_weights.sum()
         class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
-
-    if args.mode == 'resnet50':
-        model = ResNet(num_classes = max_car).float()
-    else:
-        model = ResCeptionNet(num_classes = max_car, class_weights=class_weights).float()
-    
-    # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
-    # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'], weight_decay=hyps['weight_decay'])
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.9]], gamma=0.1)
-    scheduler.last_epoch = start_epoch - 1
-    criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     if torch.cuda.is_available():
         model.cuda()
@@ -193,15 +192,11 @@ def train(args, hyps):
 
             # calculate gradient
             loss.backward()
-            # nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
 
             # Compute metrics
             _, predicted = torch.max(output, 1)
             true_labels = one_hot.argmax(dim=1)
-
-            # print(predicted)
-            # print(true_labels)
 
             accuracy = torch.sum(predicted == true_labels).float() / one_hot.size(0)
             f1_sc = f1_score(true_labels.cpu(), predicted.cpu(), average='weighted', zero_division=0.0)
@@ -212,7 +207,7 @@ def train(args, hyps):
 
             mloss = (mloss * i + loss.detach().cuda()) / (i + 1)
             mmetrics = (mmetrics * i + torch.tensor(metrics).cuda()) / (i+1)
-            s = ('%10s' + '%10.3g'*5) % (
+            s = ('%10s' + '%10.4g'*5) % (
                   '%g/%g' % (epoch, epochs), mloss, *mmetrics)
             pbar.set_description(s)
         
@@ -248,7 +243,7 @@ def train(args, hyps):
 
                 val_mloss = (val_mloss * i + val_loss.detach().cuda()) / (i+1)
                 val_mmetrics = (val_mmetrics * i + torch.tensor(val_metrics).cuda()) / (i+1)
-                val_s = ('%10.3g'*5) % (val_mloss, *val_mmetrics)
+                val_s = ('%10.4g'*5) % (val_mloss, *val_mmetrics)
                 pbar.set_description(val_s)
 
         # Update scheduler
@@ -295,7 +290,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
     parser.add_argument('--mode', type=str, default='resnet50')
-    parser.add_argument('--use_class_weights', type=bool, default=False, help='Use class weights')
+    parser.add_argument('--use_class_weights', type=bool, default=True, help='Use class weights')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)

@@ -250,7 +250,7 @@ if __name__ == "__main__":
             default='../cowc_processed/train_val/crop')
   parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
   parser.add_argument('--max_samples_per_class', help='', type=int, 
-            default=1500)
+            default=20000)
   parser.add_argument('--seed', help='Random seed to suffle train/val crops', type=int, 
             default=0)
   parser.add_argument('--mode', type=str, default='resnet50')
