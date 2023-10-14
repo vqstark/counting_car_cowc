@@ -12,6 +12,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 from models.model import ResCeptionNet
 from models.resnet50 import ResNet
 from utils.utils import hyp_parse, model_info
+from models.focal_loss import FocalLoss
 from dataset import *
 
 def compute_histogram(dataset, max_car):
@@ -125,24 +126,30 @@ def train(args, hyps):
         model = ResCeptionNet(num_classes = max_car).float()
     
     # Optimizer
-    # optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
-    optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
+    # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.5]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
-    criterion = nn.CrossEntropyLoss()
 
+    # Class weights
     class_weights = None
     if args.use_class_weights:
         class_weights = compute_class_weight(train_histogram, max_car)
         class_weights /= class_weights.sum()
         class_weights = torch.tensor(class_weights, dtype=torch.float32).cuda()
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
+    
+    # Loss function
+    if args.use_focal_loss:
+        criterion = FocalLoss(gamma=0.7, weights=class_weights) if torch.is_tensor(class_weights) else FocalLoss(gamma=0.7)
+    else:
+        criterion = nn.CrossEntropyLoss(weight=class_weights) if torch.is_tensor(class_weights) else nn.CrossEntropyLoss()
 
     if torch.cuda.is_available():
         model.cuda()
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model).cuda()
 
+    # Load checkpoint
     if args.resume:
         chkpt = torch.load(weight_path)
         # load model
@@ -188,7 +195,10 @@ def train(args, hyps):
             one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1).float()
 
             output = model(img.float())
-            loss = criterion(output, one_hot)
+            if args.use_focal_loss:
+                output = F.softmax(output, dim=1)
+                
+            loss = criterion(output, label.squeeze())
 
             # calculate gradient
             loss.backward()
@@ -228,7 +238,10 @@ def train(args, hyps):
                 one_hot = F.one_hot(label, num_classes=max_car+1).squeeze(1).float()
 
                 output = model(img.float())
-                val_loss = criterion(output, one_hot)
+                if args.use_focal_loss:
+                    output = F.softmax(output, dim=1)
+                    
+                val_loss = criterion(output, label.squeeze())
 
                 # Compute metrics
                 _, predicted = torch.max(output, 1)
@@ -285,12 +298,13 @@ if __name__ == '__main__':
     parser.add_argument('--imgs_train_path', type=str, default='../cowc_processed/train_val/crop/train')
     parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
     parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
-    parser.add_argument('--resume', type=bool, default=True, help='Resume training')
+    parser.add_argument('--resume', type=bool, default=False, help='Resume training')
     parser.add_argument('--results_file', type=str, default='weights/result.txt')
     parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
     parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
     parser.add_argument('--mode', type=str, default='resnet50')
     parser.add_argument('--use_class_weights', type=bool, default=True, help='Use class weights')
+    parser.add_argument('--use_focal_loss', type=bool, default=True, help='Use focal loss')
 
     args = parser.parse_args()
     hyps = hyp_parse(args.hyp)
