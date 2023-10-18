@@ -3,22 +3,29 @@ import numpy as np
 from tqdm import tqdm
 import math
 from PIL import Image
+from torchvision import transforms
+import torch.nn.functional as F
 
 from models.resnet50 import ResNet
 
 class Counting_Car_Model:
-    def __init__(self, model_path, max_car=9, crop_size = 96):
+    def __init__(self, model_path, max_car=9, crop_size = 96, batch=8):
         self.model_path = model_path
         self.max_car = max_car
         self.crop_size = crop_size
+        self.batch = batch
+
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        self.trans = transforms.Compose([self.normalize])
         
         if self.crop_size <= 96:
             self.max_car = 9
         
-        self.model = ResNet(num_classes = self.max_car).float()
+        self.model = ResNet(num_classes = self.max_car).float().cuda()
         
         try:
-            chkpt = torch.load(self.model_path, map_location=torch.device('cpu'))
+            chkpt = torch.load(self.model_path)
             # load model
             if 'model' in chkpt.keys() :
                 self.model.load_state_dict(chkpt['model'])
@@ -31,9 +38,24 @@ class Counting_Car_Model:
     def count(self, img):
         img = img.transpose(2, 0, 1)
         img = np.expand_dims(img, axis=0)
-        img = torch.from_numpy(img).float()
-        result = self.model(img, training=False)
-        return result
+        img = torch.from_numpy(img).float().cuda()
+        img = self.trans(img)
+        result = self.model(img).cpu()
+        result = F.softmax(result, dim=1)
+        return torch.max(result, dim=1)[1]
+    
+    def batch_count(self, batch):
+        batch_size = len(batch)
+        batch_img = torch.zeros(batch_size, 3, self.crop_size, self.crop_size)
+        for i in range(batch_size):
+            img = batch[i]
+            img = torch.tensor(img.transpose(2, 0, 1), dtype=torch.float32)
+            img = self.trans(img)
+            batch_img[i, :, :, :] = img
+
+        result = self.model(batch_img.cuda()).cpu()
+        result = F.softmax(result, dim=1)
+        return torch.max(result, dim=1)[1]
     
     def count_on_scene(self, scene_img, scene_labels, exclude_margin = 8):
         
@@ -62,15 +84,22 @@ class Counting_Car_Model:
         
         tile_idx = 0
         for yi in tqdm(range(yi_max)):
+            batch_img = []
+            num_batch = 0
+            top = yi * grid_size
             for xi in range(xi_max):
-                top = yi * grid_size
                 left = xi * grid_size
 
                 tile_image = scene_image_pad[top:top+self.crop_size, left:left+self.crop_size]
-                pred = self.count(tile_image)
-                print(pred)
-                print(pred.shape)
-                cars_counted[yi, xi] = pred
+                
+                batch_img.append(tile_image)
+                # pred = self.count(tile_image)
+                # cars_counted[yi, xi] = pred
+
+                if len(batch_img) == self.batch:
+                    num_batch += 1
+                    cars_counted[yi, (num_batch-1)*self.batch:num_batch*self.batch] = self.batch_count(batch_img).tolist()
+                    batch_img = []
 
                 if scene_labels is not None:
                     tile_label = scene_label_pad[top:top+self.crop_size, left:left+self.crop_size]
@@ -78,6 +107,9 @@ class Counting_Car_Model:
                     cars_labeled[yi, xi] = label
 
                 tile_idx += 1
+
+            if len(batch_img) > 0:
+                cars_counted[yi, -len(batch_img):] = self.batch_count(batch_img).tolist()
         
         if scene_labels is not None:
             return (cars_counted, cars_labeled), grid_size

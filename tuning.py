@@ -8,6 +8,9 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.utils.data import WeightedRandomSampler
 from sklearn.metrics import f1_score, precision_score, recall_score
+from ray import tune
+from ray.air import Checkpoint, session
+from ray.tune.schedulers import ASHAScheduler
 
 from models.model import ResCeptionNet
 from models.resnet50 import ResNet
@@ -36,23 +39,12 @@ def compute_class_weight(histogram, car_max):
 
     return class_weight
 
-def train(args, hyps):
+def train(config, args, hyps):
     epochs = int(hyps['epochs'])
     batch_size = int(hyps['batch_size'])
     start_epoch = 1
-    results_file = args.results_file
-    checkpoint_last = args.checkpoint_last
-    checkpoint_best = args.checkpoint_best
-    if args.resume:
-        weight_path = checkpoint_last
     best_f1 = 0
     max_car = int(hyps['MAX_CAR'])
-
-    # creat folder
-    if not os.path.exists('./weights'):
-        os.mkdir('./weights')
-    for f in glob.glob(results_file):
-        os.remove(f)
 
     train_ds = COWC(paths = args.annotation_train_path, 
                     root = args.imgs_train_path)
@@ -126,9 +118,9 @@ def train(args, hyps):
         model = ResCeptionNet(num_classes = max_car).float()
     
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=hyps['lr'], weight_decay=hyps['weight_decay'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'], weight_decay=hyps['weight_decay'])
     # optimizer = torch.optim.SGD(model.parameters(), lr=hyps['lr'], momentum=hyps['momentum'])
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.5]], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[round(epochs * x) for x in [0.3]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
 
     # Class weights
@@ -140,7 +132,7 @@ def train(args, hyps):
     
     # Loss function
     if args.use_focal_loss:
-        criterion = FocalLoss(gamma=0.7, weights=class_weights) if torch.is_tensor(class_weights) else FocalLoss(gamma=0.7)
+        criterion = FocalLoss(gamma=config['gamma'], weights=class_weights) if torch.is_tensor(class_weights) else FocalLoss(gamma=config['gamma'])
     else:
         criterion = nn.CrossEntropyLoss(weight=class_weights) if torch.is_tensor(class_weights) else nn.CrossEntropyLoss()
 
@@ -148,31 +140,6 @@ def train(args, hyps):
         model.cuda()
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model).cuda()
-
-    # Load checkpoint
-    if args.resume:
-        chkpt = torch.load(weight_path)
-        # load model
-        if 'model' in chkpt.keys() :
-            model.load_state_dict(chkpt['model'])
-        else:
-            model.load_state_dict(chkpt)
-        # load optimizer
-        if 'optimizer' in chkpt.keys() and chkpt['optimizer'] is not None and args.resume :
-            optimizer.load_state_dict(chkpt['optimizer'])
-            best_f1 = chkpt['best_f1']
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.cuda()
-        # load results
-        if 'training_results' in chkpt.keys() and  chkpt.get('training_results') is not None and args.resume:
-            with open(results_file, 'w') as file:
-                file.write(chkpt['training_results'])  # write results.txt
-        if 'epoch' in chkpt.keys():
-            start_epoch = chkpt['epoch'] + 1   
-
-        del chkpt
 
     # Model infor
     model_info(model)
@@ -261,31 +228,24 @@ def train(args, hyps):
 
         # Update scheduler
         scheduler.step()
-        final_epoch = epoch == epochs
-
-        # Write result log
-        with open(results_file, 'a') as f:
-            f.write(s + ' ' + val_s + '\n')
         
         # Checkpoint
         if val_mmetrics[-1] > best_f1:
             best_f1 = val_mmetrics[-1]
 
-        with open(results_file, 'r') as f:
-            # Create checkpoint
-            chkpt = {'epoch': epoch,
-                     'best_f1': best_f1,
-                     'training_results': f.read(),
-                     'model': model.module.state_dict() if type(
-                        model) is nn.parallel.DistributedDataParallel else model.state_dict(),
-                     'optimizer': None if final_epoch else optimizer.state_dict()}
+        # Create checkpoint
+        checkpoint_data = {'epoch': epoch,
+                    'best_f1': best_f1,
+                    'model': model.module.state_dict() if type(
+                    model) is nn.parallel.DistributedDataParallel else model.state_dict(),
+                    'optimizer': optimizer.state_dict()}
         
-        # Save last checkpoint
-        torch.save(chkpt, checkpoint_last)
+        checkpoint = Checkpoint.from_dict(checkpoint_data)
 
-        # Save best checkpoint
-        if best_f1 == val_mmetrics[-1]:
-            torch.save(chkpt, checkpoint_best)
+        session.report(
+            {"loss": val_mloss, "metrics": val_mmetrics},
+            checkpoint=checkpoint,
+        )
         
         torch.cuda.empty_cache()
     
@@ -293,23 +253,55 @@ def train(args, hyps):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a counter')
-    parser.add_argument('--hyp', type=str, default='hyps.py', help='hyper-parameter path')
-    parser.add_argument('--annotation_train_path', type=str, default='../cowc_processed/train_val/crop/train.txt')
-    parser.add_argument('--imgs_train_path', type=str, default='../cowc_processed/train_val/crop/train')
-    parser.add_argument('--annotation_val_path', type=str, default='../cowc_processed/train_val/crop/val.txt')
-    parser.add_argument('--imgs_val_path', type=str, default='../cowc_processed/train_val/crop/val')
-    parser.add_argument('--resume', type=bool, default=True, help='Resume training')
-    parser.add_argument('--results_file', type=str, default='weights/result.txt')
-    parser.add_argument('--checkpoint_last', type=str, default='weights/last.pth')
-    parser.add_argument('--checkpoint_best', type=str, default='weights/best.pth')
+    parser.add_argument('--annotation_train_path', type=str, default='F:/Quan/cowc_processed/train_val/crop/train.txt')
+    parser.add_argument('--imgs_train_path', type=str, default='F:/Quan/cowc_processed/train_val/crop/train')
+    parser.add_argument('--annotation_val_path', type=str, default='F:/Quan/cowc_processed/train_val/crop/val.txt')
+    parser.add_argument('--imgs_val_path', type=str, default='F:/Quan/cowc_processed/train_val/crop/val')
     parser.add_argument('--mode', type=str, default='resnet50')
     parser.add_argument('--use_class_weights', type=bool, default=True, help='Use class weights')
     parser.add_argument('--use_focal_loss', type=bool, default=True, help='Use focal loss')
 
     args = parser.parse_args()
-    hyps = hyp_parse(args.hyp)
+    # hyps = hyp_parse(args.hyp)
         
-    print(args)
-    print(hyps)
+    # print(args)
+    # print(hyps)
 
-    train(args, hyps)
+    from functools import partial
+
+    hyps = {
+        "epochs": 20,
+        'CROP_SIZE': 96,
+        'MARGIN': 8,
+        'GRID_SIZE': 2048,
+        'MAX_CAR': 9,
+        'batch_size': 32,
+        'epochs': 15,
+        'momentum': 0.9,
+        'weight_decay': 0.0002
+    }
+
+    config = {
+        'lr': tune.choice([1e-2, 1e-3, 1e-4, 1e-5]),
+        'gamma': tune.choice([0.5, 0.4, 0.3, 0.2])
+    }
+
+    scheduler = ASHAScheduler(
+        metric="loss",
+        mode="min",
+        max_t=int(hyps['epochs']),
+        grace_period=1,
+        reduction_factor=2,
+    )
+
+    result = tune.run(
+        partial(train, args=args, hyps=hyps),
+        config = config,
+        resources_per_trial={"cpu": 8, "gpu": 1},
+        scheduler=scheduler
+    )
+
+    best_trial = result.get_best_trial("loss", "min", "last")
+    print(f"Best trial config: {best_trial.config}")
+    print(f"Best trial final validation loss: {best_trial.last_result['loss']}")
+    print(f"Best trial final validation accuracy: {best_trial.last_result['accuracy']}")
